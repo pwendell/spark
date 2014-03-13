@@ -20,6 +20,7 @@ package org.apache.spark.storage
 import akka.actor.Actor
 
 import org.apache.spark.storage.BlockManagerMessages._
+import org.apache.spark.SparkEnv
 
 /**
  * An actor to take commands from the master to execute options. For example,
@@ -38,5 +39,6 @@ class BlockManagerSlaveActor(blockManager: BlockManager) extends Actor {
 
     case RemoveShuffle(shuffleId) =>
       blockManager.shuffleBlockManager.removeShuffle(shuffleId)
+      SparkEnv.get.mapOutputTracker.unregisterShuffle(shuffleId)
   }
 }

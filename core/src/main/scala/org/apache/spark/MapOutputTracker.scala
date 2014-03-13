@@ -59,6 +59,10 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
 
   private val timeout = AkkaUtils.askTimeout(conf)
 
+  def unregisterShuffle(shuffleId: Int) {
+    mapStatuses.remove(shuffleId)
+  }
+
   // Set to the MapOutputTrackerActor living on the driver
   var trackerActor: ActorRef = _
 
@@ -255,8 +259,8 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
     }
   }
 
-  def unregisterShuffle(shuffleId: Int) {
-    mapStatuses.remove(shuffleId)
+  override def unregisterShuffle(shuffleId: Int) {
+    super.unregisterShuffle(shuffleId)
     cachedSerializedStatuses.remove(shuffleId)
   }
 

@@ -398,6 +398,9 @@ class DAGScheduler(
               stageIdToStage -= stageId
               stageIdToJobIds -= stageId
 
+              ShuffleMapTask.serializedInfoCache.remove(stageId)
+              ResultTask.serializedInfoCache.remove(stageId)
+
               logDebug("After removal of stage %d, remaining stages = %d"
                 .format(stageId, stageIdToStage.size))
             }
