@@ -46,6 +46,7 @@
   </profiles>
 
   <properties>
+    <sbt.project.name>spark-repl</sbt.project.name>
     <deb.install.path>/usr/share/spark</deb.install.path>
     <deb.user>root</deb.user>
   </properties>
