@@ -17,7 +17,9 @@
 
 package org.apache.spark.network
 
-import java.net.InetSocketAddress
+import java.net.{InetAddress, InetSocketAddress}
+
+import scala.collection.mutable
 
 import org.apache.spark.util.Utils
 
@@ -31,7 +33,15 @@ private[spark] case class ConnectionManagerId(host: String, port: Int) {
 
 
 private[spark] object ConnectionManagerId {
+  /** We cache host resolution here to avoid frequent calls into the OS networking stack. */
+  private val hostCache = mutable.HashMap[InetAddress, String]()
+
   def fromSocketAddress(socketAddress: InetSocketAddress): ConnectionManagerId = {
-    new ConnectionManagerId(socketAddress.getHostName(), socketAddress.getPort())
+    val address = socketAddress.getAddress
+    if (!hostCache.contains(address)) {
+      hostCache.put(address, address.getHostName)
+    }
+    val hostName = hostCache.get(address).get
+    new ConnectionManagerId(hostName, socketAddress.getPort())
   }
 }
