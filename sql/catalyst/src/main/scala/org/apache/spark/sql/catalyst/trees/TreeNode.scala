@@ -280,7 +280,7 @@ abstract class TreeNode[BaseType <: TreeNode[BaseType]] {
    */
   def makeCopy(newArgs: Array[AnyRef]): this.type = attachTree(this, "makeCopy") {
     try {
-      val defaultCtor = getClass.getConstructors.head
+      val defaultCtor = getClass.getConstructors.find(_.getParameterTypes.size != 0).head
       if (otherCopyArgs.isEmpty) {
         defaultCtor.newInstance(newArgs: _*).asInstanceOf[this.type]
       } else {

@@ -65,6 +65,80 @@ abstract class PartialAggregate extends AggregateExpression {
   def asPartial: SplitEvaluation
 }
 
+abstract class MergeableAggregate extends PartialAggregate {
+  self: Product =>
+
+  def asPartial: SplitEvaluation = {
+    val partialValues = Alias(ReturnAggregate(this), "partialValue")()
+    SplitEvaluation(
+      MergeAggregates(partialValues.toAttribute),
+      partialValues :: Nil
+    )
+  }
+
+  def newInstance(): MergableAggregateFunction
+}
+
+case class ReturnAggregate(child: AggregateExpression)
+  extends AggregateExpression with Serializable with trees.UnaryNode[Expression] {
+
+  def dataType = child.dataType
+
+  def nullable = child.nullable
+
+  def references = child.references
+
+  def newInstance() = new ReturnAggregateFunction(child, this)
+}
+
+case class ReturnAggregateFunction(agg: AggregateExpression, base: AggregateExpression)
+  extends AggregateFunction {
+
+  def this() = this(null, null) // Required for serialization.
+
+  var currentValue: AggregateFunction = agg.newInstance()
+
+  override def eval(input: Row): Any = currentValue
+
+  override def update(input: Row): Unit = {
+    currentValue.update(input)
+  }
+}
+
+
+case class MergeAggregates(child: Expression)
+  extends AggregateExpression with Serializable with trees.UnaryNode[Expression] {
+
+  def dataType = child.dataType
+
+  def nullable = child.nullable
+
+  def references = child.references
+
+  def newInstance() = new MergeAggregateFunctions(child, this)
+}
+
+case class MergeAggregateFunctions(expr: Expression, base: AggregateExpression)
+  extends AggregateFunction {
+
+  def this() = this(null, null) // Required for serialization.
+
+  var currentValue: MergableAggregateFunction = null
+
+  override def eval(input: Row): Any =
+    if (currentValue == null) null else currentValue.eval(input)
+
+  override def update(input: Row): Unit = {
+    val newAggValue = expr.eval(input).asInstanceOf[MergableAggregateFunction]
+    if (currentValue == null) {
+      currentValue = newAggValue
+    } else {
+      currentValue = currentValue.merge(newAggValue)
+    }
+  }
+}
+
+
 /**
  * A specific implementation of an aggregate function. Used to wrap a generic
  * [[AggregateExpression]] with an algorithm that will be used to compute one specific result.
@@ -85,6 +159,12 @@ abstract class AggregateFunction
 
   // Do we really need this?
   override def newInstance() = makeCopy(productIterator.map { case a: AnyRef => a }.toArray)
+}
+
+abstract class MergableAggregateFunction extends AggregateFunction {
+  self: Product =>
+
+  def merge(other: MergableAggregateFunction): MergableAggregateFunction
 }
 
 case class Min(child: Expression) extends PartialAggregate with trees.UnaryNode[Expression] {
@@ -161,7 +241,9 @@ case class Count(child: Expression) extends PartialAggregate with trees.UnaryNod
   override def newInstance() = new CountFunction(child, this)
 }
 
-case class CountDistinct(expressions: Seq[Expression]) extends AggregateExpression {
+case class CountDistinct(expressions: Seq[Expression]) extends MergeableAggregate {
+  def this() = this(null)
+
   override def children = expressions
   override def references = expressions.flatMap(_.references).toSet
   override def nullable = false
@@ -379,12 +461,19 @@ case class SumDistinctFunction(expr: Expression, base: AggregateExpression)
     seen.reduceLeft(base.dataType.asInstanceOf[NumericType].numeric.asInstanceOf[Numeric[Any]].plus)
 }
 
-case class CountDistinctFunction(expr: Seq[Expression], base: AggregateExpression)
-  extends AggregateFunction {
+case class CountDistinctFunction(
+    @transient expr: Seq[Expression],
+    @transient base: AggregateExpression)
+  extends MergableAggregateFunction {
 
   def this() = this(null, null) // Required for serialization.
 
   val seen = new scala.collection.mutable.HashSet[Any]()
+
+  override def merge(other: MergableAggregateFunction): MergableAggregateFunction = {
+    seen ++= other.asInstanceOf[CountDistinctFunction].seen
+    this
+  }
 
   override def update(input: Row): Unit = {
     val evaluatedExpr = expr.map(_.eval(input))
