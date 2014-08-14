@@ -18,7 +18,7 @@
 package org.apache.spark.sql.hive.thriftserver.server
 
 import scala.collection.JavaConversions._
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, Map}
 import scala.math.{random, round}
 
 import java.sql.Timestamp
@@ -32,6 +32,7 @@ import org.apache.hive.service.cli.session.HiveSession
 
 import org.apache.spark.Logging
 import org.apache.spark.sql.catalyst.types._
+import org.apache.spark.sql.catalyst.plans.logical.SetCommand
 import org.apache.spark.sql.hive.thriftserver.ReflectionUtils
 import org.apache.spark.sql.hive.{HiveContext, HiveMetastoreTypes}
 import org.apache.spark.sql.{SchemaRDD, Row => SparkRow}
@@ -42,6 +43,9 @@ import org.apache.spark.sql.{SchemaRDD, Row => SparkRow}
 class SparkSQLOperationManager(hiveContext: HiveContext) extends OperationManager with Logging {
   val handleToOperation = ReflectionUtils
     .getSuperField[JMap[OperationHandle, Operation]](this, "handleToOperation")
+
+  // TODO: Currenlty this will grow infinitely, even as sessions expire
+  val sessionToActivePool = Map[HiveSession, String]()
 
   override def newExecuteStatementOperation(
       parentSession: HiveSession,
@@ -165,8 +169,18 @@ class SparkSQLOperationManager(hiveContext: HiveContext) extends OperationManage
         try {
           result = hiveContext.sql(statement)
           logDebug(result.queryExecution.toString())
+          result.queryExecution.logical match {
+            case SetCommand(Some(key), Some(value)) if key == "spark.sql.scheduler.pool" =>
+              sessionToActivePool(parentSession) = value
+              logInfo(s"Setting spark.scheduler.pool=$value for future statements in this session.")
+            case _ =>
+          }
+
           val groupId = round(random * 1000000).toString
           hiveContext.sparkContext.setJobGroup(groupId, statement)
+          sessionToActivePool.get(parentSession).foreach { pool =>
+            hiveContext.sparkContext.setLocalProperty("spark.scheduler.pool", pool)
+          }
           iter = {
             val resultRdd = result.queryExecution.toRdd
             if (hiveContext.incrementalCollectEnabled) {
