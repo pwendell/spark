@@ -22,6 +22,7 @@ import com.clearspring.analytics.stream.cardinality.HyperLogLog
 import org.apache.spark.sql.catalyst.types._
 import org.apache.spark.sql.catalyst.trees
 import org.apache.spark.sql.catalyst.errors.TreeNodeException
+import org.apache.spark.util.collection.OpenHashSet
 
 abstract class AggregateExpression extends Expression {
   self: Product =>
@@ -184,17 +185,21 @@ case class Min(child: Expression) extends PartialAggregate with trees.UnaryNode[
 case class MinFunction(expr: Expression, base: AggregateExpression) extends AggregateFunction {
   def this() = this(null, null) // Required for serialization.
 
-  var currentMin: Any = _
+  var currentMin: MutableLiteral = null
 
   override def update(input: Row): Unit = {
-    if (currentMin == null) {
-      currentMin = expr.eval(input)
-    } else if(GreaterThan(Literal(currentMin, expr.dataType), expr).eval(input) == true) {
-      currentMin = expr.eval(input)
+    // We have to avoid instantiating our MutableLiteral with a null value
+    if (expr.eval(input) != null) {
+      if (currentMin == null) {
+        currentMin = MutableLiteral(expr)
+      }
+      else if (GreaterThan(currentMin, expr).eval(input) == true) {
+        currentMin.update(expr, input)
+      }
     }
   }
 
-  override def eval(input: Row): Any = currentMin
+  override def eval(input: Row): Any = currentMin.eval(input)
 }
 
 case class Max(child: Expression) extends PartialAggregate with trees.UnaryNode[Expression] {
@@ -214,17 +219,21 @@ case class Max(child: Expression) extends PartialAggregate with trees.UnaryNode[
 case class MaxFunction(expr: Expression, base: AggregateExpression) extends AggregateFunction {
   def this() = this(null, null) // Required for serialization.
 
-  var currentMax: Any = _
+  var currentMax: MutableLiteral = null
 
   override def update(input: Row): Unit = {
-    if (currentMax == null) {
-      currentMax = expr.eval(input)
-    } else if(LessThan(Literal(currentMax, expr.dataType), expr).eval(input) == true) {
-      currentMax = expr.eval(input)
+    // We have to avoid instantiating our MutableLiteral with a null value
+    if (expr.eval(input) != null) {
+      if (currentMax == null) {
+        currentMax = MutableLiteral(expr)
+      }
+      else if (LessThan(currentMax, expr).eval(input) == true) {
+        currentMax.update(expr, input)
+      }
     }
   }
 
-  override def eval(input: Row): Any = currentMax
+  override def eval(input: Row): Any = currentMax.eval(input)
 }
 
 case class Count(child: Expression) extends PartialAggregate with trees.UnaryNode[Expression] {
@@ -468,17 +477,18 @@ case class CountDistinctFunction(
 
   def this() = this(null, null) // Required for serialization.
 
-  val seen = new scala.collection.mutable.HashSet[Any]()
+  val seen = new OpenHashSet[Any]()
 
   override def merge(other: MergableAggregateFunction): MergableAggregateFunction = {
-    seen ++= other.asInstanceOf[CountDistinctFunction].seen
+    // seen ++= other.seen
+    other.asInstanceOf[CountDistinctFunction].seen.iterator.foreach(seen.add(_))
     this
   }
 
   override def update(input: Row): Unit = {
     val evaluatedExpr = expr.map(_.eval(input))
     if (evaluatedExpr.map(_ != null).reduceLeft(_ && _)) {
-      seen += evaluatedExpr
+      seen.add(evaluatedExpr)
     }
   }
 
