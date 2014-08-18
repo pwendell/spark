@@ -42,13 +42,10 @@ import parquet.io.ParquetDecodingException
 import parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
-<<<<<<< HEAD
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.catalyst.expressions._
-=======
 import org.apache.spark.sql.SQLConf
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Row}
->>>>>>> apache-github/pr/2005
 import org.apache.spark.sql.execution.{LeafNode, SparkPlan, UnaryNode}
 import org.apache.spark.{Logging, SerializableWritable, TaskContext}
 
@@ -112,7 +109,11 @@ case class ParquetTableScan(
       ParquetFilters.serializeFilterExpressions(columnPruningPred, conf)
     }
 
-<<<<<<< HEAD
+    // Tell FilteringParquetRowInputFormat whether it's okay to cache Parquet and FS metadata
+    conf.set(
+      SQLConf.PARQUET_CACHE_METADATA,
+      sqlContext.getConf(SQLConf.PARQUET_CACHE_METADATA, "false"))
+
     val baseRDD =
       new org.apache.spark.rdd.NewHadoopRDD(
         sc,
@@ -147,21 +148,7 @@ case class ParquetTableScan(
       }
     } else {
       baseRDD.map(_._2)
-    }.filter(_ != null) // Parquet's record filters may produce null values
-=======
-    // Tell FilteringParquetRowInputFormat whether it's okay to cache Parquet and FS metadata
-    conf.set(
-      SQLConf.PARQUET_CACHE_METADATA,
-      sqlContext.getConf(SQLConf.PARQUET_CACHE_METADATA, "false"))
-
-    sc.newAPIHadoopRDD(
-      conf,
-      classOf[FilteringParquetRowInputFormat],
-      classOf[Void],
-      classOf[Row])
-      .map(_._2)
-      .filter(_ != null) // Parquet's record filters may produce null values
->>>>>>> apache-github/pr/2005
+    }.filter(_ != null) // Parquet's record filters may produce null values  
   }
 
   /**
