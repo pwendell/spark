@@ -674,7 +674,7 @@ class SparkILoop(in0: Option[BufferedReader], protected val out: JPrintWriter)
       addedClasspath = ClassPath.join(addedClasspath, f.path)
       intp.addUrlsToClassPath(f.toURI.toURL)
       intp.beQuietDuring {
-        command(s"sc.addJar(${f.toURI.toURL.getPath})")
+        command(s"""sc.addJar("${f.toURI.toURL.getPath}")""")
       }
       echo("Added '%s' to classpath.".format(f.path, intp.global.classPath.asClasspathString))
       repldbg("Added '%s'.  Your new classpath is:\n\"%s\"".format(f.path, intp.global.classPath.asClasspathString))
