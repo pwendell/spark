@@ -120,6 +120,8 @@ object SparkBuild extends PomBuild {
 
   lazy val sharedSettings = graphSettings ++ Seq (
     javaHome   := Properties.envOrNone("JAVA_HOME").map(file),
+    scalaHome  := Some(file("/Users/hmiller/Dropbox/git-shared/scala/build/pack/")),
+    unmanagedJars in Compile ++= scalaInstance.value.jars,
     incOptions := incOptions.value.withNameHashing(true),
     retrieveManaged := true,
     retrievePattern := "[type]s/[artifact](-[revision])(-[classifier]).[ext]",
@@ -211,7 +213,7 @@ object OldDeps {
 
 object Catalyst {
   lazy val settings = Seq(
-    addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0-SNAPSHOT" cross CrossVersion.full),
+    addCompilerPlugin("org.scalamacros" % "paradise_2.11.5-SNAPSHOT" % "2.1.0-SNAPSHOT" /*cross CrossVersion.full*/),
     // Quasiquotes break compiling scala doc...
     // TODO: Investigate fixing this.
     sources in (Compile, doc) ~= (_ filter (_.getName contains "codegen")))

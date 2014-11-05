@@ -1183,13 +1183,13 @@ class SparkIMain(@BeanProperty val factory: ScriptEngineFactory, initialSettings
 
     def apply(line: String): Result = debugging(s"""parse("$line")""")  {
       var isIncomplete = false
-      currentRun.reporting.withIncompleteHandler((_, _) => isIncomplete = true) {
+      // currentRun.reporting.withIncompleteHandler((_, _) => isIncomplete = true) {
         reporter.reset()
         val trees = newUnitParser(line).parseStats()
         if (reporter.hasErrors) Error
         else if (isIncomplete) Incomplete
         else Success(trees)
-      }
+      // }
     }
   }
 
