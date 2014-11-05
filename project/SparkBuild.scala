@@ -127,6 +127,7 @@ object SparkBuild extends PomBuild {
     //    unidocGenjavadocVersion := "0.8",
 
     resolvers += Resolver.mavenLocal,
+    resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots",
     otherResolvers <<= SbtPomKeys.mvnLocalRepository(dotM2 => Seq(Resolver.file("dotM2", dotM2))),
     publishLocalConfiguration in MavenCompile <<= (packagedArtifacts, deliverLocal, ivyLoggingLevel) map {
       (arts, _, level) => new PublishConfiguration(None, "dotM2", arts, Seq(), level)
@@ -210,7 +211,7 @@ object OldDeps {
 
 object Catalyst {
   lazy val settings = Seq(
-    addCompilerPlugin("org.scalamacros" % "paradise" % "2.0.1" cross CrossVersion.full),
+    addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0-SNAPSHOT" cross CrossVersion.full),
     // Quasiquotes break compiling scala doc...
     // TODO: Investigate fixing this.
     sources in (Compile, doc) ~= (_ filter (_.getName contains "codegen")))
