@@ -18,9 +18,13 @@ import scala.reflect.internal.util.{ BatchSourceFile, SourceFile }
 import scala.tools.util.PathResolver
 import scala.tools.nsc.io.AbstractFile
 import scala.tools.nsc.typechecker.{ TypeStrings, StructuredTypeStrings }
-import scala.tools.nsc.util.{ ScalaClassLoader, stringFromReader, stringFromWriter, StackTraceOps }
+import scala.tools.nsc.util.{ ScalaClassLoader, stringFromReader, stringFromWriter, StackTraceOps, ClassPath, MergedClassPath }
+import ScalaClassLoader.URLClassLoader
 import scala.tools.nsc.util.Exceptional.unwrap
+import scala.tools.nsc.backend.JavaPlatform
 import javax.script.{AbstractScriptEngine, Bindings, ScriptContext, ScriptEngine, ScriptEngineFactory, ScriptException, CompiledScript, Compilable}
+import java.net.URL
+import java.io.File
 
 /** An interpreter for Scala code.
   *
@@ -82,6 +86,8 @@ class SparkIMain(@BeanProperty val factory: ScriptEngineFactory, initialSettings
     */
   private var _classLoader: util.AbstractFileClassLoader = null                              // active classloader
   private val _compiler: ReplGlobal                 = newCompiler(settings, reporter)   // our private compiler
+
+  private var _runtimeClassLoader: URLClassLoader = null              // wrapper exposing addURL
 
   def compilerClasspath: Seq[java.net.URL] = (
     if (isInitializeComplete) global.classPath.asURLs
@@ -238,6 +244,18 @@ class SparkIMain(@BeanProperty val factory: ScriptEngineFactory, initialSettings
     new Global(settings, reporter) with ReplGlobal { override def toString: String = "<global>" }
   }
 
+  /**
+   * Adds all specified jars to the compile and runtime classpaths.
+   *
+   * @note  Currently only supports jars, not directories.
+   * @param urls The list of items to add to the compile and runtime classpaths.
+   */
+  def addUrlsToClassPath(urls: URL*): Unit = {
+    new Run //  force some initialization
+    urls.foreach(_runtimeClassLoader.addURL) // Add jars to runtime classloader
+    global.extendCompilerClassPath(urls: _*)           // Add jars to compile-time classpath
+  }
+
   /** Parent classloader.  Overridable. */
   protected def parentClassLoader: ClassLoader =
     settings.explicitParentLoader.getOrElse( this.getClass.getClassLoader() )
@@ -314,9 +332,9 @@ class SparkIMain(@BeanProperty val factory: ScriptEngineFactory, initialSettings
       }
   }
   private def makeClassLoader(): util.AbstractFileClassLoader =
-    new TranslatingClassLoader(parentClassLoader match {
-      case null   => ScalaClassLoader fromURLs compilerClasspath
-      case p      => new ScalaClassLoader.URLClassLoader(compilerClasspath, p)
+    new TranslatingClassLoader({
+      _runtimeClassLoader = new URLClassLoader(compilerClasspath, parentClassLoader)
+      _runtimeClassLoader
     })
 
   // Set the current Java "context" class loader to this interpreter's class loader
@@ -1129,13 +1147,13 @@ class SparkIMain(@BeanProperty val factory: ScriptEngineFactory, initialSettings
 
     def apply(line: String): Result = debugging(s"""parse("$line")""")  {
       var isIncomplete = false
-      currentRun.reporting.withIncompleteHandler((_, _) => isIncomplete = true) {
+      // currentRun.reporting.withIncompleteHandler((_, _) => isIncomplete = true) {
         reporter.reset()
         val trees = newUnitParser(line).parseStats()
         if (reporter.hasErrors) Error
         else if (isIncomplete) Incomplete
         else Success(trees)
-      }
+      // }
     }
   }
 
@@ -1225,7 +1243,7 @@ object SparkIMain {
   private def removeIWPackages(s: String)  = s.replaceAll("""\$(iw|read|eval|print)[$.]""", "")
   private def removeSparkVals(s: String) = s.replaceAll("""\$VAL[0-9]+[$.]""", "")
   def stripString(s: String)               = removeSparkVals(removeIWPackages(removeLineWrapper(s)))
-  
+
   trait CodeAssembler[T] {
     def preamble: String
     def generate: T => String
